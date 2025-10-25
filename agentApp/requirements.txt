@@ -1,0 +1,6 @@
+requests==2.31.0
+paramiko==3.3.1
+lz4==4.3.2
+psutil==5.9.5
+pywin32>=306
+cryptography==41.0.5

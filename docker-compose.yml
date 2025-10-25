@@ -1,0 +1,148 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ftp_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ftp_user
+      POSTGRES_PASSWORD: SecurePass123
+      POSTGRES_DB: ftp_central
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ftp_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ftp_network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: ftp_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ftp_network
+
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: ftp_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: SecureRabbitPass123
+    ports:
+      - "5672:5672"    # AMQP port
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - ftp_network
+
+  # FastAPI Application
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ftp_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+      - ./logs:/app/logs
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ftp_network
+
+  # Celery Worker (for scheduled tasks)
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ftp_celery_worker
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app worker --loglevel=info
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+      - ./logs:/app/logs
+      - ./data:/app/data
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    networks:
+      - ftp_network
+
+  # Celery Beat (scheduler)
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ftp_celery_beat
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app beat --loglevel=info
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+      - ./logs:/app/logs
+      - ./data:/app/data
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    networks:
+      - ftp_network
+
+# Named volumes for data persistence
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+
+# Network for inter-container communication
+networks:
+  ftp_network:
+    driver: bridge
