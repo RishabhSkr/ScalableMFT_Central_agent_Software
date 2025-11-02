@@ -1,7 +1,7 @@
 # app/api/auth.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
+# from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 import uuid
@@ -9,7 +9,7 @@ import uuid
 from app.database import get_db
 from app.config import settings
 from app.models.agent import Agent
-
+from jose import JWTError, jwt
 router = APIRouter()
 security = HTTPBearer()
 
